@@ -1,0 +1,91 @@
+# Python Virtual Environments
+zzz_venv/
+.venv/
+.venv-2/
+.venv-gpu/
+.venv-gpu2/
+.venv-gpu312/
+.venv-gpu312b/
+.venv_local/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Local environment files
+.env.local
+.env.*.local
+*.env
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Training logs
+training_gpu_*.log
+training_gpu_*.err.log
+*.log.err
+training.log
+
+# Large model files (not needed if using Hugging Face)
+ai/model_checkpoint*.pt
+ai/model_checkpoint*.pth
+models/
+checkpoints/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Node modules (if any)
+node_modules/
+package-lock.json
+
+# MySQL dumps
+*.sql.bak
+*.sql.backup
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+
+# VS Code settings
+.vscode/settings.json
+
+# Five Server
+.fiveserver*
+
+# Rails specific logs
+log/

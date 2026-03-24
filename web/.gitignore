@@ -1,0 +1,2 @@
+# Ignorera lokala hemligheter
+.env.local

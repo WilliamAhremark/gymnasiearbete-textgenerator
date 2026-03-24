@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: neuraltext-web
+    runtime: docker
+    dockerfilePath: ./web/Dockerfile
+    plan: free
+    healthCheckPath: /index.php
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: BASE_URL
+        value: /
+      - key: DB_HOST
+        sync: false
+      - key: DB_NAME
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASS
+        sync: false
+      - key: AI_API_URL
+        sync: false
+
+  - type: web
+    name: neuraltext-ai-api
+    runtime: docker
+    dockerfilePath: ./api/Dockerfile
+    plan: free
+    healthCheckPath: /
+    envVars:
+      - key: CHECKPOINT_PATH
+        value: /app/ai/model_checkpoint.pt
+      - key: MODEL_CHECKPOINT_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
