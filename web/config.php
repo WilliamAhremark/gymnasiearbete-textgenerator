@@ -1,33 +1,16 @@
 <?php
 
-session_start([
-    'cookie_lifetime' => 86400,
-    'cookie_httponly' => true,
-    'use_strict_mode' => true
-]);
-
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
-
-
-/*
-========================
-RAILWAY MYSQL CONNECTION
-========================
-Railway ger dessa variabler:
-
-MYSQLHOST
-MYSQLDATABASE
-MYSQLUSER
-MYSQLPASSWORD
-MYSQLPORT
-*/
+session_start();
 
 $host = getenv('MYSQLHOST');
 $dbname = getenv('MYSQLDATABASE');
-$username = getenv('MYSQLUSER');
-$password = getenv('MYSQLPASSWORD');
-$port = getenv('MYSQLPORT');
+$user = getenv('MYSQLUSER');
+$pass = getenv('MYSQLPASSWORD');
+$port = getenv('MYSQLPORT') ?: 3306;
+
+if (!$host) {
+    die("MYSQLHOST missing");
+}
 
 try {
 
@@ -35,8 +18,8 @@ try {
 
     $pdo = new PDO(
         $dsn,
-        $username,
-        $password,
+        $user,
+        $pass,
         [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
@@ -44,43 +27,86 @@ try {
     );
 
 } catch (PDOException $e) {
+
     die("Database connection failed: " . $e->getMessage());
+
 }
 
-
-/* ========================
-   AUTH FUNCTIONS
-======================== */
-
-function isLoggedIn() {
-    return isset($_SESSION['user_id']);
-}
-
-function requireLogin() {
-    if (!isLoggedIn()) {
-        header("Location: login.php");
-        exit;
-    }
-}
-
-function sanitizeInput($input) {
-    return htmlspecialchars(trim($input), ENT_QUOTES, 'UTF-8');
-}
-
-
-/* ========================
-   CSRF
-======================== */
-
-function generateCSRFToken() {
+/**
+ * Generates a CSRF token and stores it in the session.
+ * Returns the token so it can be embedded in forms.
+ */
+function generateCSRFToken(): string {
     if (!isset($_SESSION['csrf_token'])) {
         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
     }
     return $_SESSION['csrf_token'];
 }
 
-function verifyCSRFToken($token) {
-    return isset($_SESSION['csrf_token']) &&
-           hash_equals($_SESSION['csrf_token'], $token);
+/**
+ * Verifies that the provided CSRF token matches the one stored in the session.
+ */
+function verifyCSRFToken(string $token): bool {
+    return isset($_SESSION['csrf_token']) && hash_equals($_SESSION['csrf_token'], $token);
 }
+
+/**
+ * Sanitizes user input to prevent XSS by stripping tags and encoding special characters.
+ */
+function sanitizeInput(string $input): string {
+    return htmlspecialchars(strip_tags(trim($input)), ENT_QUOTES, 'UTF-8');
+}
+
+/**
+ * Validates that the given string is a properly formatted email address.
+ */
+function validateEmail(string $email): bool {
+    return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+}
+
+/**
+ * Checks password strength and returns an array of unmet requirements.
+ * An empty array means the password satisfies all requirements.
+ */
+function checkPasswordStrength(string $password): array {
+    $errors = [];
+
+    if (strlen($password) < 8) {
+        $errors[] = 'at least 8 characters';
+    }
+    if (!preg_match('/[A-Z]/', $password)) {
+        $errors[] = 'at least one uppercase letter';
+    }
+    if (!preg_match('/[a-z]/', $password)) {
+        $errors[] = 'at least one lowercase letter';
+    }
+    if (!preg_match('/[0-9]/', $password)) {
+        $errors[] = 'at least one number';
+    }
+    if (!preg_match('/[!@#$%^&*()\-_=+\[\]{};:\'",.<>?\/\\\\|`~]/', $password)) {
+        $errors[] = 'at least one special character';
+    }
+
+    return $errors;
+}
+
+/**
+ * Returns true if the current visitor has an active authenticated session.
+ */
+function isLoggedIn(): bool {
+    return isset($_SESSION['user_id']) && !empty($_SESSION['user_id']);
+}
+
+/**
+ * Redirects to the login page if the visitor is not authenticated.
+ * Stores the originally requested URL so the user can be sent there after login.
+ */
+function requireLogin(): void {
+    if (!isLoggedIn()) {
+        $_SESSION['redirect_url'] = $_SERVER['REQUEST_URI'] ?? 'dashboard.php';
+        header('Location: login.php');
+        exit;
+    }
+}
+
 ?>
