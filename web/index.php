@@ -1046,7 +1046,16 @@ $ai_test_used = false;
                     body: JSON.stringify({ prompt, length })
                 });
                 if (!res.ok) {
-                    throw new Error(`API error ${res.status}`);
+                    let errorMessage = `API error ${res.status}`;
+                    try {
+                        const errData = await res.json();
+                        if (errData?.error) {
+                            errorMessage = errData.error;
+                        }
+                    } catch (_) {
+                        // Keep fallback status-based message when error body is not JSON.
+                    }
+                    throw new Error(errorMessage);
                 }
                 const data = await res.json();
                 outputEl.textContent = data.text || '(empty response)';
