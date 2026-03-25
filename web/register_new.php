@@ -55,9 +55,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
              
                 $passwordHash = password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]);
                 
-                // Spara användare
-                $stmt = $pdo->prepare("INSERT INTO users (email, username, password) VALUES (?, ?, ?)");
-                $stmt->execute([$email, $username, $passwordHash]);
+                // Spara användare med fallback för olika schema-varianter.
+                try {
+                    $stmt = $pdo->prepare("INSERT INTO users (email, username, password, role) VALUES (?, ?, ?, 'user')");
+                    $stmt->execute([$email, $username, $passwordHash]);
+                } catch (PDOException $insertError) {
+                    if (($insertError->errorInfo[1] ?? 0) === 1054) {
+                        $stmt = $pdo->prepare("INSERT INTO users (email, username, password) VALUES (?, ?, ?)");
+                        $stmt->execute([$email, $username, $passwordHash]);
+                    } else {
+                        throw $insertError;
+                    }
+                }
                 
                 $userId = $pdo->lastInsertId();
                 
@@ -78,6 +87,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             error_log("Registration error: " . $e->getMessage());
             if (($e->errorInfo[0] ?? '') === '23000') {
                 $errors[] = "E-post eller användarnamn finns redan.";
+            } elseif (($e->errorInfo[0] ?? '') === '42S02') {
+                $errors[] = "Databas saknar nödvändig tabell (users).";
+            } elseif (($e->errorInfo[0] ?? '') === '42S22') {
+                $errors[] = "Databas saknar nödvändig kolumn i users-tabellen.";
             } else {
                 $errors[] = "Ett tekniskt fel uppstod. Försök igen.";
             }

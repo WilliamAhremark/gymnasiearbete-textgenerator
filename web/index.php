@@ -7,8 +7,8 @@ require_once 'config.php';
 //     exit;
 // }
 
-// Check if user has already tested the AI demo
-$ai_test_used = isset($_COOKIE['ai_demo_tested']) && $_COOKIE['ai_demo_tested'] === '1';
+// Demo is now unlimited for all visitors.
+$ai_test_used = false;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -764,23 +764,17 @@ $ai_test_used = isset($_COOKIE['ai_demo_tested']) && $_COOKIE['ai_demo_tested'] 
                 <div class="demo-layout scroll-animate">
                     <div class="demo-card">
                         <h2>Try simple AI text</h2>
-                        <?php if ($ai_test_used): ?>
-                            <div style="background: rgba(255, 193, 7, 0.1); border: 1px solid rgba(255, 193, 7, 0.3); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; color: #ffc107;">
-                                <strong>Demo limit reached:</strong> You've already used the free AI test. <a href="login.php" style="color: #ffc107; text-decoration: underline;">Sign in</a> to use the full AI generator.
-                            </div>
-                        <?php else: ?>
-                            <p>Send a prompt and generate text directly via this site's AI endpoint.</p>
-                        <?php endif; ?>
-                        <div class="ai-form" id="ai-form" style="<?php echo $ai_test_used ? 'opacity: 0.5; pointer-events: none;' : ''; ?>">
+                        <p>Send a prompt and generate text directly via this site's AI endpoint.</p>
+                        <div class="ai-form" id="ai-form">
                             <label for="ai-prompt">Prompt</label>
-                            <textarea id="ai-prompt" placeholder="Write your starting text here..." <?php echo $ai_test_used ? 'disabled' : ''; ?>>This is a test</textarea>
+                            <textarea id="ai-prompt" placeholder="Write your starting text here...">This is a test</textarea>
 
                             <div class="ai-actions">
                                 <div>
                                     <label for="ai-length">Length</label>
-                                    <input id="ai-length" type="number" min="10" max="500" value="120" <?php echo $ai_test_used ? 'disabled' : ''; ?>>
+                                    <input id="ai-length" type="number" min="10" max="500" value="120">
                                 </div>
-                                <button id="ai-generate" class="btn btn-primary" type="button" <?php echo $ai_test_used ? 'disabled' : ''; ?>>
+                                <button id="ai-generate" class="btn btn-primary" type="button">
                                     <i class="fas fa-magic"></i> Generate
                                 </button>
                                 <span class="ai-status" id="ai-status"></span>
@@ -1031,16 +1025,11 @@ $ai_test_used = isset($_COOKIE['ai_demo_tested']) && $_COOKIE['ai_demo_tested'] 
         const outputEl = document.getElementById('ai-output');
         const statusEl = document.getElementById('ai-status');
         const btn = document.getElementById('ai-generate');
-        const aiTestUsed = <?php echo $ai_test_used ? 'true' : 'false'; ?>;
+        const aiTestUsed = false;
 
         async function generateText() {
             const prompt = promptEl.value.trim();
             const length = parseInt(lengthEl.value, 10) || 80;
-            
-            if (aiTestUsed) {
-                statusEl.textContent = 'You have already used the free demo. Please log in to use the full AI generator.';
-                return;
-            }
             
             if (!prompt) {
                 statusEl.textContent = 'Please enter a prompt first.';
@@ -1062,10 +1051,6 @@ $ai_test_used = isset($_COOKIE['ai_demo_tested']) && $_COOKIE['ai_demo_tested'] 
                 const data = await res.json();
                 outputEl.textContent = data.text || '(empty response)';
                 statusEl.textContent = 'Done!';
-                
-                // Set cookie to mark that demo has been used
-                // Cookie expires in 30 days or until user logs in
-                document.cookie = 'ai_demo_tested=1; path=/; max-age=2592000';
             } catch (err) {
                 statusEl.textContent = 'Error during request: ' + err.message;
             } finally {

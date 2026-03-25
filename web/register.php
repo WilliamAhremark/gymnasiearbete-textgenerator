@@ -47,9 +47,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = "E-post eller användarnamn finns redan.";
             } else {
                 $passwordHash = password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]);
-                // Avoid hard dependency on a specific schema variant (e.g. missing created_at column).
-                $stmt = $pdo->prepare("INSERT INTO users (email, username, password) VALUES (?, ?, ?)");
-                $stmt->execute([$email, $username, $passwordHash]);
+                try {
+                    // Prefer explicit role for DB variants without a default value.
+                    $stmt = $pdo->prepare("INSERT INTO users (email, username, password, role) VALUES (?, ?, ?, 'user')");
+                    $stmt->execute([$email, $username, $passwordHash]);
+                } catch (PDOException $insertError) {
+                    // Fallback for older schema variants where role column does not exist.
+                    if (($insertError->errorInfo[1] ?? 0) === 1054) {
+                        $stmt = $pdo->prepare("INSERT INTO users (email, username, password) VALUES (?, ?, ?)");
+                        $stmt->execute([$email, $username, $passwordHash]);
+                    } else {
+                        throw $insertError;
+                    }
+                }
                 
                 $success = "Kontot har skapats! Du kan nu logga in.";
                 $_POST = [];
@@ -58,6 +68,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             error_log("Registration error: " . $e->getMessage());
             if (($e->errorInfo[0] ?? '') === '23000') {
                 $errors[] = "E-post eller användarnamn finns redan.";
+            } elseif (($e->errorInfo[0] ?? '') === '42S02') {
+                $errors[] = "Databas saknar nödvändig tabell (users).";
+            } elseif (($e->errorInfo[0] ?? '') === '42S22') {
+                $errors[] = "Databas saknar nödvändig kolumn i users-tabellen.";
             } else {
                 $errors[] = "Ett tekniskt fel uppstod. Försök igen.";
             }
