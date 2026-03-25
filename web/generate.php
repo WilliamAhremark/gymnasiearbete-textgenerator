@@ -2,7 +2,7 @@
 require_once 'config.php';
 requireLogin();
 
-$aiApiUrl = getenv('AI_API_URL') ?: 'https://api-inference.huggingface.co/models/distilgpt2';
+$aiApiUrl = 'api_generate.php';
 $hfApiToken = getenv('HF_API_TOKEN') ?: '';
 ?>
 <!DOCTYPE html>
