@@ -7,3 +7,6 @@ WORKDIR /app
 COPY web/ .
 
 CMD ["php", "-S", "0.0.0.0:8080"]
+COPY web/ /app
+
+CMD ["php", "-S", "0.0.0.0:8080", "-t", "/app"]
