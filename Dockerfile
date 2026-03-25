@@ -1,17 +1,11 @@
 FROM php:8.2-apache
 
-RUN apt-get update && apt-get install -y libpq-dev \
-    && docker-php-ext-install pdo pdo_pgsql
+RUN docker-php-ext-install pdo pdo_pgsql
 
-RUN a2enmod rewrite
+COPY web/ /var/www/html/
 
-ENV APACHE_DOCUMENT_ROOT=/var/www/html/web
+RUN a2dismod mpm_event || true
+RUN a2dismod mpm_worker || true
+RUN a2enmod mpm_prefork
 
-RUN sed -ri -e 's!/var/www/html!!g' \
-    /etc/apache2/sites-available/*.conf \
-    /etc/apache2/apache2.conf \
-    /etc/apache2/conf-available/*.conf
-
-COPY . /var/www/html
-
-CMD ["apache2-foreground"]
+EXPOSE 80
