@@ -4,9 +4,13 @@ session_start();
 
 $host = getenv('MYSQLHOST');
 $dbname = getenv('MYSQLDATABASE');
-$username = getenv('MYSQLUSER');
-$password = getenv('MYSQLPASSWORD');
+$user = getenv('MYSQLUSER');
+$pass = getenv('MYSQLPASSWORD');
 $port = getenv('MYSQLPORT') ?: 3306;
+
+if (!$host) {
+    die("MYSQLHOST missing");
+}
 
 try {
 
@@ -14,8 +18,8 @@ try {
 
     $pdo = new PDO(
         $dsn,
-        $username,
-        $password,
+        $user,
+        $pass,
         [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
@@ -23,7 +27,9 @@ try {
     );
 
 } catch (PDOException $e) {
+
     die("Database connection failed: " . $e->getMessage());
+
 }
 
 ?>
