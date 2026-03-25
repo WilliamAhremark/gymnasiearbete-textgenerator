@@ -1,11 +1,17 @@
-FROM python:3.11-slim
+FROM php:8.2-apache
 
-WORKDIR /app
+RUN apt-get update && apt-get install -y libpq-dev \
+    && docker-php-ext-install pdo pdo_pgsql
 
-COPY api/requirements.txt .
+RUN a2enmod rewrite
 
-RUN pip install --no-cache-dir -r requirements.txt
+ENV APACHE_DOCUMENT_ROOT=/var/www/html/web
 
-COPY api .
+RUN sed -ri -e 's!/var/www/html!!g' \
+    /etc/apache2/sites-available/*.conf \
+    /etc/apache2/apache2.conf \
+    /etc/apache2/conf-available/*.conf
 
-CMD sh -c "uvicorn app:app --host 0.0.0.0 --port \"
+COPY . /var/www/html
+
+CMD ["apache2-foreground"]
