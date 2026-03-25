@@ -109,4 +109,14 @@ function requireLogin(): void {
     }
 }
 
+// Define BASE_URL for asset paths
+define('BASE_URL', '/');
+
+/**
+ * Returns true if the current user is an admin.
+ */
+function isAdmin(): bool {
+    return isset($_SESSION['user_role']) && $_SESSION['user_role'] === 'admin';
+}
+
 ?>
