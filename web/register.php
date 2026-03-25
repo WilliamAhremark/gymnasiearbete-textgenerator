@@ -47,7 +47,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = "E-post eller användarnamn finns redan.";
             } else {
                 $passwordHash = password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]);
-                $stmt = $pdo->prepare("INSERT INTO users (email, username, password, created_at) VALUES (?, ?, ?, NOW())");
+                // Avoid hard dependency on a specific schema variant (e.g. missing created_at column).
+                $stmt = $pdo->prepare("INSERT INTO users (email, username, password) VALUES (?, ?, ?)");
                 $stmt->execute([$email, $username, $passwordHash]);
                 
                 $success = "Kontot har skapats! Du kan nu logga in.";
@@ -55,7 +56,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         } catch (PDOException $e) {
             error_log("Registration error: " . $e->getMessage());
-            $errors[] = "Ett tekniskt fel uppstod. Försök igen.";
+            if (($e->errorInfo[0] ?? '') === '23000') {
+                $errors[] = "E-post eller användarnamn finns redan.";
+            } else {
+                $errors[] = "Ett tekniskt fel uppstod. Försök igen.";
+            }
         }
     }
 }

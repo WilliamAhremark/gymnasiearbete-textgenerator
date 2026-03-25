@@ -1,6 +1,8 @@
 <?php
 require_once 'config.php';
 
+generateCSRFToken();
+
 $errors = [];
 $success = '';
 
@@ -59,9 +61,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 $userId = $pdo->lastInsertId();
                 
-                // Skapa välkomstnotis
-                $stmt = $pdo->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
-                $stmt->execute([$userId, "Välkommen till AI-projektet! Du kan nu börja generera text med AI:n."]);
+                // Skapa välkomstnotis utan att blockera registrering om notifications-tabellen saknas.
+                try {
+                    $stmt = $pdo->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
+                    $stmt->execute([$userId, "Välkommen till AI-projektet! Du kan nu börja generera text med AI:n."]);
+                } catch (PDOException $notificationError) {
+                    error_log("Registration notification error: " . $notificationError->getMessage());
+                }
                 
                 $success = "Registrering lyckades! Du kan nu logga in.";
                 
@@ -70,7 +76,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         } catch (PDOException $e) {
             error_log("Registration error: " . $e->getMessage());
-            $errors[] = "Ett tekniskt fel uppstod. Försök igen.";
+            if (($e->errorInfo[0] ?? '') === '23000') {
+                $errors[] = "E-post eller användarnamn finns redan.";
+            } else {
+                $errors[] = "Ett tekniskt fel uppstod. Försök igen.";
+            }
         }
     }
 }
