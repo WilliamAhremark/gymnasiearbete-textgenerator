@@ -2,7 +2,8 @@
 require_once 'config.php';
 requireLogin();
 
-$aiApiUrl = getenv('AI_API_URL') ?: 'http://127.0.0.1:8000/generate';
+$aiApiUrl = getenv('AI_API_URL') ?: 'https://api-inference.huggingface.co/models/distilgpt2';
+$hfApiToken = getenv('HF_API_TOKEN') ?: '';
 ?>
 <!DOCTYPE html>
 <html lang="sv">
@@ -323,6 +324,7 @@ $aiApiUrl = getenv('AI_API_URL') ?: 'http://127.0.0.1:8000/generate';
 
         <script>
             const apiUrl = <?php echo json_encode($aiApiUrl, JSON_UNESCAPED_SLASHES); ?>;
+            const hfApiToken = <?php echo json_encode($hfApiToken); ?>;
             const promptEl = document.getElementById('ai-prompt');
             const lengthEl = document.getElementById('ai-length');
             const outputEl = document.getElementById('ai-output');
@@ -368,22 +370,35 @@ $aiApiUrl = getenv('AI_API_URL') ?: 'http://127.0.0.1:8000/generate';
                 btn.disabled = true;
                 outputEl.textContent = '';
                 try {
+                    if (!hfApiToken) {
+                        throw new Error('HF_API_TOKEN is not set. Add your Hugging Face API token as an environment variable in Railway.');
+                    }
                     const res = await fetch(apiUrl, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ prompt, length })
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Bearer ' + hfApiToken
+                        },
+                        body: JSON.stringify({ inputs: prompt, parameters: { max_new_tokens: length } })
                     });
+                    if (res.status === 401) {
+                        throw new Error('Invalid or expired HF_API_TOKEN. Check your Hugging Face API token in Railway environment variables.');
+                    }
+                    if (res.status === 503) {
+                        throw new Error('Model is loading on Hugging Face servers. Please wait a moment and try again.');
+                    }
                     if (!res.ok) {
-                        throw new Error(`API error ${res.status}`);
+                        throw new Error(`Hugging Face API error (HTTP ${res.status})`);
                     }
                     const data = await res.json();
-                    outputEl.textContent = data.text || '(empty response)';
+                    const generated = Array.isArray(data) ? data[0]?.generated_text : data?.generated_text;
+                    outputEl.textContent = generated || '(empty response)';
                     statusEl.textContent = 'Done!';
                     statusEl.style.color = '#10b981';
                 } catch (err) {
-                    statusEl.textContent = 'Error: ' + err.message;
+                    statusEl.textContent = 'Error';
                     statusEl.style.color = '#ff6b6b';
-                    outputEl.textContent = 'Could not connect to API. Expected endpoint: ' + apiUrl;
+                    outputEl.textContent = err.message;
                 } finally {
                     btn.disabled = false;
                 }
