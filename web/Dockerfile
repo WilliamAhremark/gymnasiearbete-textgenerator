@@ -1,28 +1,20 @@
 FROM php:8.2-apache
 
-# Install system dependencies for PostgreSQL
-RUN apt-get update && apt-get install -y \
-    libpq-dev \
-    unzip \
-    git \
+RUN apt-get update && apt-get install -y libpq-dev \
     && docker-php-ext-install pdo pdo_pgsql
 
-# Enable Apache modules
-RUN a2enmod rewrite headers deflate
+RUN a2enmod rewrite
 
-# Set Apache document root
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/web
-RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' \
+
+RUN sed -ri -e 's!/var/www/html!!g' \
     /etc/apache2/sites-available/*.conf \
     /etc/apache2/apache2.conf \
     /etc/apache2/conf-available/*.conf
 
-# Production PHP settings
-RUN echo "display_errors=Off" > /usr/local/etc/php/conf.d/prod.ini && \
-    echo "log_errors=On" >> /usr/local/etc/php/conf.d/prod.ini
+# ?? EXTREMT VIKTIGT ? Railway port
+RUN sed -i 's/80//g' /etc/apache2/ports.conf /etc/apache2/sites-available/000-default.conf
 
 COPY . /var/www/html
 
-RUN chown -R www-data:www-data /var/www/html
-
-EXPOSE 80
+CMD ["apache2-foreground"]
