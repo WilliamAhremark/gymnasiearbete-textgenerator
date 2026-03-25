@@ -1,86 +1,30 @@
 <?php
 
-session_start([
-    'cookie_lifetime' => 86400,
-    'cookie_httponly' => true,
-    'use_strict_mode' => true
-]);
+session_start();
 
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
+$databaseUrl = getenv("DATABASE_URL");
 
-/*
-========================
-RAILWAY MYSQL CONNECTION
-========================
-Railway ger dessa variabler:
+if (!$databaseUrl) {
+    die("DATABASE_URL missing");
+}
 
-MYSQLHOST
-MYSQLDATABASE
-MYSQLUSER
-MYSQLPASSWORD
-MYSQLPORT
-*/
+$db = parse_url($databaseUrl);
 
-$host = getenv('MYSQLHOST');
-$dbname = getenv('MYSQLDATABASE');
-$username = getenv('MYSQLUSER');
-$password = getenv('MYSQLPASSWORD');
-$port = getenv('MYSQLPORT');
+$host = $db["host"];
+$port = $db["port"];
+$user = $db["user"];
+$pass = $db["pass"];
+$name = ltrim($db["path"], "/");
+
+$dsn = "pgsql:host=$host;port=$port;dbname=$name;sslmode=require";
 
 try {
-
-    $dsn = "mysql:host=$host;port=$port;dbname=$dbname;charset=utf8mb4";
-
-    $pdo = new PDO(
-        $dsn,
-        $username,
-        $password,
-        [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
-        ]
-    );
-
+    $pdo = new PDO($dsn, $user, $pass, [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
+    ]);
 } catch (PDOException $e) {
     die("Database connection failed: " . $e->getMessage());
 }
-
-
-/* ========================
-   AUTH FUNCTIONS
-======================== */
-
-function isLoggedIn() {
-    return isset($_SESSION['user_id']);
-}
-
-function requireLogin() {
-    if (!isLoggedIn()) {
-        header("Location: login.php");
-        exit;
-    }
-}
-
-function sanitizeInput($input) {
-    return htmlspecialchars(trim($input), ENT_QUOTES, 'UTF-8');
-}
-
-
-/* ========================
-   CSRF
-======================== */
-
-function generateCSRFToken() {
-    if (!isset($_SESSION['csrf_token'])) {
-        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-    }
-    return $_SESSION['csrf_token'];
-}
-
-function verifyCSRFToken($token) {
-    return isset($_SESSION['csrf_token']) &&
-           hash_equals($_SESSION['csrf_token'], $token);
-}
-?>
