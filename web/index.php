@@ -769,7 +769,7 @@ $ai_test_used = isset($_COOKIE['ai_demo_tested']) && $_COOKIE['ai_demo_tested'] 
                                 <strong>Demo limit reached:</strong> You've already used the free AI test. <a href="login.php" style="color: #ffc107; text-decoration: underline;">Sign in</a> to use the full AI generator.
                             </div>
                         <?php else: ?>
-                            <p>Send a prompt to the simple AI server (http://127.0.0.1:8000/generate) and get generated text right here.</p>
+                            <p>Send a prompt and generate text directly via this site's AI endpoint.</p>
                         <?php endif; ?>
                         <div class="ai-form" id="ai-form" style="<?php echo $ai_test_used ? 'opacity: 0.5; pointer-events: none;' : ''; ?>">
                             <label for="ai-prompt">Prompt</label>
@@ -1024,8 +1024,8 @@ $ai_test_used = isset($_COOKIE['ai_demo_tested']) && $_COOKIE['ai_demo_tested'] 
             observer.observe(el);
         });
 
-        // Simple AI client calling local FastAPI
-        const apiUrl = 'http://127.0.0.1:8000/generate';
+        // Same-origin endpoint works both locally and on Railway.
+        const apiUrl = 'api_generate.php';
         const promptEl = document.getElementById('ai-prompt');
         const lengthEl = document.getElementById('ai-length');
         const outputEl = document.getElementById('ai-output');

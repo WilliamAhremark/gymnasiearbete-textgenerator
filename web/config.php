@@ -13,7 +13,6 @@ if (!$host) {
 }
 
 try {
-
     $dsn = "mysql:host=$host;port=$port;dbname=$dbname;charset=utf8mb4";
 
     $pdo = new PDO(
@@ -25,11 +24,8 @@ try {
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
         ]
     );
-
 } catch (PDOException $e) {
-
     die("Database connection failed: " . $e->getMessage());
-
 }
 
 /**
