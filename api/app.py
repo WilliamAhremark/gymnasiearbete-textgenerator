@@ -255,3 +255,7 @@ def generate(req: GenerateRequest):
 
 	text = decode_tokens(out[0].tolist())
 	return {"text": text}
+
+@app.get("/")
+def railway_health():
+    return {"status": "ok"}
