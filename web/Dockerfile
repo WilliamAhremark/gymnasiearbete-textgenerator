@@ -5,17 +5,15 @@ RUN apt-get update && apt-get install -y libpq-dev \
 
 RUN a2enmod rewrite
 
-ENV APACHE_DOCUMENT_ROOT=/var/www/html/web
+ENV APACHE_DOCUMENT_ROOT /var/www/html/web
 
 RUN sed -ri -e "s!/var/www/html!${APACHE_DOCUMENT_ROOT}!g" \
-    /etc/apache2/sites-available/*.conf \
-    /etc/apache2/apache2.conf \
-    /etc/apache2/conf-available/*.conf
+    /etc/apache2/sites-available/000-default.conf
 
-# ? RIKTIG railway port fix
-RUN sed -i "s/80/\${PORT}/g" /etc/apache2/ports.conf \
-    && sed -i "s/:80/:\${PORT}/g" /etc/apache2/sites-available/000-default.conf
+# ? Railway port fix — HELT NY metod
+RUN echo "Listen \${PORT}" > /etc/apache2/ports.conf
+RUN sed -ri -e "s!:80!:\${PORT}!g" /etc/apache2/sites-available/000-default.conf
 
 COPY . /var/www/html
 
-CMD ["apache2-foreground"]
+CMD apache2ctl -D FOREGROUND
