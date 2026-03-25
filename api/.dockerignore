@@ -1,0 +1,10 @@
+__pycache__
+*.log
+*.txt
+*.ps1
+*.pt.old
+venv
+.vscode
+assets
+database
+web

@@ -2,10 +2,12 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY . .
+COPY api/requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-ENV PYTHONUNBUFFERED=1
+COPY api .
 
-CMD uvicorn app:app --host 0.0.0.0 --port $PORT
+COPY ai/model_checkpoint.pt .
+
+CMD sh -c "uvicorn app:app --host 0.0.0.0 --port \"
