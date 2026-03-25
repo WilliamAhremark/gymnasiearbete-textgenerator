@@ -1052,6 +1052,10 @@ $ai_test_used = false;
                         if (errData?.error) {
                             errorMessage = errData.error;
                         }
+                        if (Array.isArray(errData?.attempts) && errData.attempts.length > 0) {
+                            const compactAttempts = errData.attempts.slice(0, 4).join('\n- ');
+                            outputEl.textContent = `Diagnostics:\n- ${compactAttempts}`;
+                        }
                     } catch (_) {
                         // Keep fallback status-based message when error body is not JSON.
                     }
