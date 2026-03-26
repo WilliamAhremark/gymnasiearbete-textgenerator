@@ -6,12 +6,22 @@ header('Content-Type: application/json');
 
 $token = trim(getenv('HF_TOKEN') ?: getenv('HF_API_TOKEN') ?: '');
 $aiApiUrl = trim(getenv('AI_API_URL') ?: '');
+// Default model list expanded with more reliable free-tier options.
 $primaryModel = trim(getenv('HF_MODEL') ?: 'gpt2');
-$fallbackModelsEnv = trim(getenv('HF_FALLBACK_MODELS') ?: 'distilgpt2,bigscience/bloom-560m');
+$fallbackModelsEnv = trim(getenv('HF_FALLBACK_MODELS') ?: 'distilgpt2,EleutherAI/gpt-neo-125M');
 
-if ($token === '' && $aiApiUrl === '') {
+// Validate that the token looks like a real HuggingFace token (starts with "hf_").
+$tokenValid = $token !== '' && str_starts_with($token, 'hf_');
+
+if (!$tokenValid && $aiApiUrl === '') {
     http_response_code(500);
-    echo json_encode(['error' => 'Missing AI configuration: set HF_TOKEN (or HF_API_TOKEN) and/or AI_API_URL']);
+    $tokenHint = $token === ''
+        ? 'HF_TOKEN is not set'
+        : 'HF_TOKEN does not look valid (expected it to start with "hf_")';
+    echo json_encode([
+        'error' => 'Missing or invalid AI configuration',
+        'hint'  => "{$tokenHint}. Set HF_TOKEN to a valid Hugging Face token, or set AI_API_URL to a custom inference endpoint.",
+    ]);
     exit;
 }
 
@@ -94,29 +104,31 @@ $result = null;
 $lastHttpCode = 502;
 $attemptErrors = [];
 
-if ($token !== '') {
+if ($tokenValid) {
     foreach ($models as $modelName) {
         $encodedModel = rawurlencode($modelName);
+        // Try the HuggingFace Inference API (router endpoint).
         $endpoints = [
             "https://router.huggingface.co/hf-inference/models/{$encodedModel}"
         ];
 
         foreach ($endpoints as $url) {
-            // Retry transient provider errors once before moving to next fallback.
-            for ($retry = 0; $retry < 2; $retry++) {
+            // Up to 3 attempts per endpoint: handles model-loading (503) and transient errors.
+            for ($retry = 0; $retry < 3; $retry++) {
                 [$httpCode, $response, $curlError] = requestJson(
                     $url,
                     $payload,
                     [
                         "Authorization: Bearer {$token}",
                         "Content-Type: application/json",
-                        "Accept: application/json"
+                        "Accept: application/json",
+                        "X-Wait-For-Model: true"
                     ]
                 );
                 $lastHttpCode = $httpCode > 0 ? $httpCode : 502;
 
                 if ($curlError !== '') {
-                    $attemptErrors[] = "{$modelName} via {$url}: {$curlError}";
+                    $attemptErrors[] = "{$modelName} @ {$url}: curl error — {$curlError}";
                     break;
                 }
 
@@ -138,23 +150,58 @@ if ($token !== '') {
                     if (strlen($snippet) > 220) {
                         $snippet = substr($snippet, 0, 220) . '...';
                     }
-                    $attemptErrors[] = "{$modelName} via {$url}: non-JSON response (HTTP {$httpCode}) {$snippet}";
+                    $attemptErrors[] = "{$modelName} @ {$url}: non-JSON response (HTTP {$httpCode}) — {$snippet}";
                     break;
                 }
 
                 $errorText = is_array($parsed) ? ($parsed['error'] ?? ('HTTP ' . $httpCode)) : ('HTTP ' . $httpCode);
-                $attemptErrors[] = "{$modelName} via {$url}: {$errorText}";
 
-                // Do not continue for auth/permission/configuration issues.
-                if (in_array($httpCode, [400, 401, 403], true)) {
+                // Build a human-readable hint for common failure codes.
+                $hint = '';
+                if ($httpCode === 401) {
+                    $hint = 'Token rejected — check that HF_TOKEN is a valid, non-expired Hugging Face token.';
+                } elseif ($httpCode === 403) {
+                    $hint = 'Access denied — the token may lack permission for this model, or the model is gated.';
+                } elseif ($httpCode === 404) {
+                    $hint = "Model \"{$modelName}\" not found on the HuggingFace router. It may have been removed or renamed.";
+                } elseif ($httpCode === 503) {
+                    // Model is still loading; estimated_time may be present.
+                    $estimatedTime = is_array($parsed) ? (int)($parsed['estimated_time'] ?? 20) : 20;
+                    $waitMs = min($estimatedTime * 1000000, 5000000); // cap at 5 s
+                    $hint = "Model is loading (estimated {$estimatedTime}s). Retrying after short wait…";
+                    $attemptErrors[] = "{$modelName} @ {$url}: {$errorText} — {$hint}";
+                    if ($retry < 2) {
+                        usleep($waitMs);
+                        continue;
+                    }
+                    break;
+                }
+
+                $logEntry = "{$modelName} @ {$url}: HTTP {$httpCode} — {$errorText}";
+                if ($hint !== '') {
+                    $logEntry .= " | {$hint}";
+                }
+                $attemptErrors[] = $logEntry;
+
+                // Hard-stop on auth/permission errors — no point trying other models.
+                if (in_array($httpCode, [401, 403], true)) {
                     http_response_code($httpCode);
-                    echo json_encode(['error' => $errorText, 'details' => $parsed]);
+                    echo json_encode([
+                        'error'   => $errorText,
+                        'hint'    => $hint,
+                        'details' => $parsed,
+                    ]);
                     exit;
                 }
 
-                // Retry on transient rate-limit/server loading errors.
-                if ($retry === 0 && in_array($httpCode, [408, 409, 425, 429, 500, 502, 503, 504], true)) {
-                    usleep(250000);
+                // 404 means this model is unavailable on the router; skip to next model.
+                if ($httpCode === 404) {
+                    break;
+                }
+
+                // Retry on transient rate-limit / server errors.
+                if ($retry < 2 && in_array($httpCode, [408, 409, 425, 429, 500, 502, 504], true)) {
+                    usleep(500000); // 0.5 s
                     continue;
                 }
 
@@ -164,7 +211,7 @@ if ($token !== '') {
     }
 }
 
-// Secondary fallback: your own deployed API service (AI_API_URL).
+// Secondary fallback: a custom deployed inference service (AI_API_URL).
 if ($result === null && $aiApiUrl !== '') {
     [$httpCode, $response, $curlError] = requestJson(
         $aiApiUrl,
@@ -175,11 +222,11 @@ if ($result === null && $aiApiUrl !== '') {
     $lastHttpCode = $httpCode > 0 ? $httpCode : $lastHttpCode;
 
     if ($curlError !== '') {
-        $attemptErrors[] = "AI_API_URL {$aiApiUrl}: {$curlError}";
+        $attemptErrors[] = "AI_API_URL {$aiApiUrl}: curl error — {$curlError}";
     } else {
         $parsed = json_decode((string)$response, true);
         if (json_last_error() !== JSON_ERROR_NONE) {
-            $attemptErrors[] = "AI_API_URL {$aiApiUrl}: invalid JSON";
+            $attemptErrors[] = "AI_API_URL {$aiApiUrl}: invalid JSON in response";
         } elseif ($httpCode >= 200 && $httpCode < 300) {
             $result = $parsed;
         } else {
@@ -191,11 +238,35 @@ if ($result === null && $aiApiUrl !== '') {
     }
 }
 
+// Tertiary fallback: local pattern-based text generation (ai-fallback.php).
+if ($result === null) {
+    $fallbackFile = __DIR__ . '/ai-fallback.php';
+    if (file_exists($fallbackFile)) {
+        $fallbackResult = null;
+        try {
+            // Call the fallback script in-process by including it with isolated scope.
+            $fallbackResult = (function () use ($prompt, $length, $fallbackFile): ?array {
+                return include $fallbackFile;
+            })();
+        } catch (Throwable $e) {
+            $attemptErrors[] = "local fallback: exception — " . $e->getMessage();
+        }
+
+        if (is_array($fallbackResult) && isset($fallbackResult['text']) && trim($fallbackResult['text']) !== '') {
+            $result = $fallbackResult;
+            $result['_source'] = 'local-fallback';
+        } else {
+            $attemptErrors[] = 'local fallback: returned no usable text';
+        }
+    }
+}
+
 if ($result === null) {
     http_response_code($lastHttpCode >= 400 ? $lastHttpCode : 502);
     echo json_encode([
-        'error' => 'All configured AI providers failed',
-        'attempts' => $attemptErrors
+        'error'    => 'All configured AI providers failed',
+        'attempts' => $attemptErrors,
+        'hint'     => 'Check that HF_TOKEN is set to a valid Hugging Face token (starts with "hf_") and that the chosen models are accessible with a free-tier account.',
     ]);
     exit;
 }
@@ -208,6 +279,10 @@ if (trim($text) === '') {
     exit;
 }
 
-echo json_encode([
-    "text" => $text
-]);
+$responsePayload = ["text" => $text];
+// Surface the fallback source so callers can show a notice if needed.
+if (isset($result['_source'])) {
+    $responsePayload['_source'] = $result['_source'];
+}
+
+echo json_encode($responsePayload);
