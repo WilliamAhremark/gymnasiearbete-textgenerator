@@ -4,14 +4,14 @@ require_once 'config.php';
 
 header('Content-Type: application/json');
 
-$token = getenv('HF_API_TOKEN');
+$token = trim(getenv('HF_TOKEN') ?: getenv('HF_API_TOKEN') ?: '');
 $aiApiUrl = trim(getenv('AI_API_URL') ?: '');
 $primaryModel = trim(getenv('HF_MODEL') ?: 'gpt2');
 $fallbackModelsEnv = trim(getenv('HF_FALLBACK_MODELS') ?: 'distilgpt2,bigscience/bloom-560m');
 
-if (!$token && $aiApiUrl === '') {
+if ($token === '' && $aiApiUrl === '') {
     http_response_code(500);
-    echo json_encode(['error' => 'Missing AI configuration: set HF_API_TOKEN and/or AI_API_URL']);
+    echo json_encode(['error' => 'Missing AI configuration: set HF_TOKEN (or HF_API_TOKEN) and/or AI_API_URL']);
     exit;
 }
 
@@ -94,12 +94,11 @@ $result = null;
 $lastHttpCode = 502;
 $attemptErrors = [];
 
-if ($token) {
+if ($token !== '') {
     foreach ($models as $modelName) {
         $encodedModel = rawurlencode($modelName);
         $endpoints = [
-            "https://router.huggingface.co/hf-inference/models/{$encodedModel}",
-            "https://api-inference.huggingface.co/models/{$encodedModel}"
+            "https://router.huggingface.co/hf-inference/models/{$encodedModel}"
         ];
 
         foreach ($endpoints as $url) {
@@ -110,7 +109,8 @@ if ($token) {
                     $payload,
                     [
                         "Authorization: Bearer {$token}",
-                        "Content-Type: application/json"
+                        "Content-Type: application/json",
+                        "Accept: application/json"
                     ]
                 );
                 $lastHttpCode = $httpCode > 0 ? $httpCode : 502;
@@ -121,14 +121,25 @@ if ($token) {
                 }
 
                 $parsed = json_decode((string)$response, true);
-                if (json_last_error() !== JSON_ERROR_NONE) {
-                    $attemptErrors[] = "{$modelName} via {$url}: invalid JSON";
-                    break;
-                }
+                $jsonError = json_last_error();
+                $isJson = $jsonError === JSON_ERROR_NONE;
 
                 if ($httpCode >= 200 && $httpCode < 300) {
-                    $result = $parsed;
+                    if ($isJson) {
+                        $result = $parsed;
+                    } else {
+                        $result = ["text" => trim((string)$response)];
+                    }
                     break 3;
+                }
+
+                if (!$isJson) {
+                    $snippet = trim((string)$response);
+                    if (strlen($snippet) > 220) {
+                        $snippet = substr($snippet, 0, 220) . '...';
+                    }
+                    $attemptErrors[] = "{$modelName} via {$url}: non-JSON response (HTTP {$httpCode}) {$snippet}";
+                    break;
                 }
 
                 $errorText = is_array($parsed) ? ($parsed['error'] ?? ('HTTP ' . $httpCode)) : ('HTTP ' . $httpCode);

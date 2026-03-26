@@ -61,6 +61,7 @@ training.log
 # Large model files (not needed if using Hugging Face)
 ai/model_checkpoint*.pt
 ai/model_checkpoint*.pth
+*.whl
 models/
 checkpoints/
 
