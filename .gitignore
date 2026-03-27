@@ -7,6 +7,7 @@ zzz_venv/
 .venv-gpu312/
 .venv-gpu312b/
 .venv_local/
+.venv312/
 venv/
 env/
 ENV/
@@ -55,6 +56,8 @@ MANIFEST
 # Training logs
 training_gpu_*.log
 training_gpu_*.err.log
+ai/training_run_latest.log
+ai/training_run_latest.err.log
 *.log.err
 training.log
 
