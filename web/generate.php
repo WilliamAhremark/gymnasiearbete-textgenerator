@@ -2,7 +2,8 @@
 require_once 'config.php';
 requireLogin();
 
-$aiApiUrl = 'api_generate.php';
+$hfModel = getenv('HF_MODEL') ?: 'Williack/neuraltext-model';
+$aiApiUrl = 'https://api-inference.huggingface.co/models/' . $hfModel;
 $hfApiToken = getenv('HF_API_TOKEN') ?: '';
 ?>
 <!DOCTYPE html>
