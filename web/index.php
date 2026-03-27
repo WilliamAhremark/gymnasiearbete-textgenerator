@@ -1064,6 +1064,11 @@ $ai_test_used = false;
                 const data = await res.json();
                 outputEl.textContent = data.text || '(empty response)';
                 statusEl.textContent = 'Done!';
+                if (data._source === 'local-fallback') {
+                    statusEl.textContent = 'Done (generic fallback text)';
+                } else if (data._source === 'custom-api') {
+                    statusEl.textContent = 'Done (Shakespeare model)';
+                }
             } catch (err) {
                 statusEl.textContent = 'Error during request: ' + err.message;
             } finally {

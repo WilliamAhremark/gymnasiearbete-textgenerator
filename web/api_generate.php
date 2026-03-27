@@ -6,6 +6,8 @@ header('Content-Type: application/json');
 
 $token = trim(getenv('HF_TOKEN') ?: getenv('HF_API_TOKEN') ?: '');
 $aiApiUrl = trim(getenv('AI_API_URL') ?: '');
+$preferAiApi = trim(getenv('PREFER_AI_API_URL') ?: '1') === '1';
+$allowLocalFallback = trim(getenv('ALLOW_LOCAL_FALLBACK') ?: '0') === '1';
 // Default model list expanded with more reliable free-tier options.
 $primaryModel = trim(getenv('HF_MODEL') ?: 'gpt2');
 $fallbackModelsEnv = trim(getenv('HF_FALLBACK_MODELS') ?: 'distilgpt2,EleutherAI/gpt-neo-125M');
@@ -104,6 +106,48 @@ $result = null;
 $lastHttpCode = 502;
 $attemptErrors = [];
 $authBlocked = false;
+
+$callCustomAiApi = function () use (&$result, &$lastHttpCode, &$attemptErrors, $aiApiUrl, $internalPayload): void {
+    if ($aiApiUrl === '' || $result !== null) {
+        return;
+    }
+
+    [$httpCode, $response, $curlError] = requestJson(
+        $aiApiUrl,
+        $internalPayload,
+        ["Content-Type: application/json"],
+        120
+    );
+    $lastHttpCode = $httpCode > 0 ? $httpCode : $lastHttpCode;
+
+    if ($curlError !== '') {
+        $attemptErrors[] = "AI_API_URL {$aiApiUrl}: curl error — {$curlError}";
+        return;
+    }
+
+    $parsed = json_decode((string)$response, true);
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        $attemptErrors[] = "AI_API_URL {$aiApiUrl}: invalid JSON in response";
+        return;
+    }
+
+    if ($httpCode >= 200 && $httpCode < 300) {
+        $result = $parsed;
+        if (is_array($result)) {
+            $result['_source'] = 'custom-api';
+        }
+        return;
+    }
+
+    $apiError = is_array($parsed)
+        ? ($parsed['detail'] ?? $parsed['error'] ?? ('HTTP ' . $httpCode))
+        : ('HTTP ' . $httpCode);
+    $attemptErrors[] = "AI_API_URL {$aiApiUrl}: {$apiError}";
+};
+
+if ($preferAiApi) {
+    $callCustomAiApi();
+}
 
 if ($tokenValid) {
     foreach ($models as $modelName) {
@@ -207,39 +251,17 @@ if ($tokenValid) {
     }
 }
 
-// Secondary fallback: a custom deployed inference service (AI_API_URL).
-if ($result === null && $aiApiUrl !== '') {
-    [$httpCode, $response, $curlError] = requestJson(
-        $aiApiUrl,
-        $internalPayload,
-        ["Content-Type: application/json"],
-        120
-    );
-    $lastHttpCode = $httpCode > 0 ? $httpCode : $lastHttpCode;
-
-    if ($curlError !== '') {
-        $attemptErrors[] = "AI_API_URL {$aiApiUrl}: curl error — {$curlError}";
-    } else {
-        $parsed = json_decode((string)$response, true);
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            $attemptErrors[] = "AI_API_URL {$aiApiUrl}: invalid JSON in response";
-        } elseif ($httpCode >= 200 && $httpCode < 300) {
-            $result = $parsed;
-        } else {
-            $apiError = is_array($parsed)
-                ? ($parsed['detail'] ?? $parsed['error'] ?? ('HTTP ' . $httpCode))
-                : ('HTTP ' . $httpCode);
-            $attemptErrors[] = "AI_API_URL {$aiApiUrl}: {$apiError}";
-        }
-    }
+// Secondary/tertiary fallback: custom deployed inference service.
+if ($result === null) {
+    $callCustomAiApi();
 }
 
 if ($result === null && $authBlocked) {
     $attemptErrors[] = 'HF token auth failed; remote HF generation was skipped after authentication rejection.';
 }
 
-// Tertiary fallback: local pattern-based text generation (ai-fallback.php).
-if ($result === null) {
+// Optional local pattern-based fallback (disabled by default).
+if ($result === null && $allowLocalFallback) {
     $fallbackFile = __DIR__ . '/ai-fallback.php';
     if (file_exists($fallbackFile)) {
         $fallbackResult = null;
@@ -262,11 +284,11 @@ if ($result === null) {
 }
 
 if ($result === null) {
-    http_response_code($lastHttpCode >= 400 ? $lastHttpCode : 502);
+    http_response_code($lastHttpCode >= 400 ? $lastHttpCode : 503);
     echo json_encode([
-        'error'    => 'All configured AI providers failed',
+        'error'    => 'No active Shakespeare model provider returned output',
         'attempts' => $attemptErrors,
-        'hint'     => 'Check that HF_TOKEN is set to a valid Hugging Face token (starts with "hf_") and that the chosen models are accessible with a free-tier account.',
+        'hint'     => 'Set AI_API_URL to your Railway API service (/generate) and MODEL_CHECKPOINT_URL to your trained checkpoint URL. Optional generic fallback requires ALLOW_LOCAL_FALLBACK=1.',
     ]);
     exit;
 }
