@@ -243,6 +243,7 @@ def generate(req: GenerateRequest):
 		raise HTTPException(status_code=400, detail="Prompt kan inte vara tom")
 
 	idx = torch.tensor([encode_prompt(prompt)], dtype=torch.long, device=device)
+	seed_decoded = decode_tokens(idx[0].tolist())
 
 	with torch.no_grad():
 		out = model.generate(
@@ -253,9 +254,12 @@ def generate(req: GenerateRequest):
 			repetition_penalty=gen_cfg.get("repetition_penalty", 1.1),
 		)
 
-	text = decode_tokens(out[0].tolist())
-	return {"text": text}
+	decoded = decode_tokens(out[0].tolist())
+	if decoded.startswith(seed_decoded):
+		continuation = decoded[len(seed_decoded):]
+	else:
+		continuation = decoded
 
-@app.get("/")
-def railway_health():
-    return {"status": "ok"}
+	# Ensure output always starts with the user's exact prompt.
+	text = prompt + continuation
+	return {"text": text}

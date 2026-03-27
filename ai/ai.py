@@ -4,6 +4,8 @@ from torch.nn import functional as F
 from contextlib import nullcontext
 import time
 import ctypes
+import os
+from pathlib import Path
 
 # Keep system awake during training
 def keep_awake():
@@ -15,22 +17,61 @@ def keep_awake():
 
 keep_awake()
 
+
+def env_int(name, default):
+    value = os.getenv(name)
+    if value is None or value == '':
+        return default
+    return int(value)
+
+
+def env_float(name, default):
+    value = os.getenv(name)
+    if value is None or value == '':
+        return default
+    return float(value)
+
 # hyperparameters
-batch_size = 64 # how many independent sequences will we process in parallel?
-block_size = 256 # what is the maximum context length for predictions?
-max_iters = 5000
-eval_interval = 500
-learning_rate = 3e-4
+batch_size = env_int('BATCH_SIZE', 64) # how many independent sequences will we process in parallel?
+block_size = env_int('BLOCK_SIZE', 256) # what is the maximum context length for predictions?
+max_iters = env_int('MAX_ITERS', 5000)
+eval_interval = env_int('EVAL_INTERVAL', 500)
+learning_rate = env_float('LEARNING_RATE', 3e-4)
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-eval_iters = 200
-n_embd = 384
-n_head = 6
-n_layer = 6
-dropout = 0.3
-weight_decay = 0.1
-temperature = 0.9
-top_p = 0.9
-repetition_penalty = 1.1
+eval_iters = env_int('EVAL_ITERS', 200)
+n_embd = env_int('N_EMBD', 384)
+n_head = env_int('N_HEAD', 6)
+n_layer = env_int('N_LAYER', 6)
+dropout = env_float('DROPOUT', 0.3)
+weight_decay = env_float('WEIGHT_DECAY', 0.1)
+temperature = env_float('TEMPERATURE', 0.9)
+top_p = env_float('TOP_P', 0.9)
+repetition_penalty = env_float('REPETITION_PENALTY', 1.1)
+sample_tokens = env_int('SAMPLE_TOKENS', 250)
+sample_prompt = os.getenv('SAMPLE_PROMPT', 'look outside').strip()
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+checkpoint_path = Path(os.getenv('CHECKPOINT_PATH', str(SCRIPT_DIR / 'model_checkpoint.pt')))
+
+input_file_env = os.getenv('INPUT_FILE', '').strip()
+dataset_candidates = []
+if input_file_env:
+    dataset_candidates.append(Path(input_file_env))
+dataset_candidates.extend([
+    SCRIPT_DIR / 'input.txt',
+    SCRIPT_DIR / 'inpuut.txt',
+    Path('input.txt'),
+    Path('inpuut.txt'),
+])
+
+dataset_path = next((candidate for candidate in dataset_candidates if candidate.exists()), None)
+if dataset_path is None:
+    raise FileNotFoundError(
+        'No training text file found. Set INPUT_FILE or add ai/input.txt (or ai/inpuut.txt).'
+    )
+
+print(f'Using dataset: {dataset_path}')
+print(f'Checkpoint output: {checkpoint_path}')
 # ------------
 
 torch.manual_seed(1337)
@@ -47,7 +88,7 @@ def autocast_context():
     return nullcontext()
 
 # wget https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt
-with open('input.txt', 'r', encoding='utf-8') as f:
+with open(dataset_path, 'r', encoding='utf-8') as f:
     text = f.read()
 
 def deduplicate_text(raw_text):
@@ -298,6 +339,28 @@ for iter in range(max_iters):
     scaler.step(optimizer)
     scaler.update()
 
+    # Save checkpoint every eval_interval (500 steps) so API can use latest weights
+    if iter % eval_interval == 0 or iter == max_iters - 1:
+        checkpoint = {
+            'model_state_dict': m.state_dict(),
+            'iteration': iter,
+            'config': {
+                'block_size': block_size,
+                'n_embd': n_embd,
+                'n_head': n_head,
+                'n_layer': n_layer,
+                'dropout': dropout,
+                'temperature': temperature,
+                'top_p': top_p,
+                'repetition_penalty': repetition_penalty,
+            },
+            'stoi': stoi,
+            'itos': itos,
+        }
+        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(checkpoint, checkpoint_path)
+        print(f'Saved checkpoint to {checkpoint_path} (step {iter}/{max_iters})')
+
 checkpoint = {
     'model_state_dict': m.state_dict(),
     'config': {
@@ -313,10 +376,28 @@ checkpoint = {
     'stoi': stoi,
     'itos': itos,
 }
-torch.save(checkpoint, 'model_checkpoint.pt')
-print('Saved checkpoint to model_checkpoint.pt')
+checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+torch.save(checkpoint, checkpoint_path)
+print(f'Saved final checkpoint to {checkpoint_path}')
 
-# generate from the model
-context = torch.zeros((1, 1), dtype=torch.long, device=device)
-print(decode(m.generate(context, max_new_tokens=500, temperature=temperature, top_p=top_p, repetition_penalty=repetition_penalty)[0].tolist()))
+# generate from the model with an explicit prompt continuation
+seed_ids = [stoi[c] for c in sample_prompt if c in stoi]
+if not seed_ids:
+    seed_ids = torch.zeros((1, 1), dtype=torch.long, device=device).tolist()[0]
+
+context = torch.tensor([seed_ids], dtype=torch.long, device=device)
+generated_ids = m.generate(
+    context,
+    max_new_tokens=sample_tokens,
+    temperature=temperature,
+    top_p=top_p,
+    repetition_penalty=repetition_penalty,
+)[0].tolist()
+
+decoded_seed = decode(seed_ids)
+decoded_full = decode(generated_ids)
+continuation = decoded_full[len(decoded_seed):] if decoded_full.startswith(decoded_seed) else decoded_full
+
+print('--- SAMPLE ---')
+print(sample_prompt + continuation)
 #open('more.txt', 'w').write(decode(m.generate(context, max_new_tokens=10000)[0].tolist()))
