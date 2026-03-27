@@ -389,6 +389,9 @@ $aiApiUrl = 'api_generate.php';
                             if (errData?.error) {
                                 errorMessage = errData.error;
                             }
+                            if (errData?.details) {
+                                errorMessage += `\n${errData.details}`;
+                            }
                             if (errData?.hint) {
                                 errorMessage += `\n${errData.hint}`;
                             }

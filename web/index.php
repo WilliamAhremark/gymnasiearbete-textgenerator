@@ -1052,6 +1052,12 @@ $ai_test_used = false;
                         if (errData?.error) {
                             errorMessage = errData.error;
                         }
+                        if (errData?.details) {
+                            errorMessage += `\n${errData.details}`;
+                        }
+                        if (errData?.hint) {
+                            errorMessage += `\n${errData.hint}`;
+                        }
                         if (Array.isArray(errData?.attempts) && errData.attempts.length > 0) {
                             const compactAttempts = errData.attempts.slice(0, 4).join('\n- ');
                             outputEl.textContent = `Diagnostics:\n- ${compactAttempts}`;

@@ -9,6 +9,8 @@ if (ob_get_level() === 0) {
     ob_start();
 }
 
+$phpWarnings = [];
+
 function send_json(int $status, array $payload): void {
     http_response_code($status);
     echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -18,12 +20,11 @@ function send_json(int $status, array $payload): void {
     exit;
 }
 
-set_error_handler(function ($severity, $message, $file, $line) {
+set_error_handler(function ($severity, $message, $file, $line) use (&$phpWarnings) {
     error_log("api_generate.php warning/error: {$message} in {$file}:{$line}");
-    send_json(500, [
-        'error' => 'Server-side PHP warning/error occurred during AI request.',
-        'details' => $message,
-    ]);
+    $phpWarnings[] = "{$message} in {$file}:{$line}";
+    // Do not abort the request on warnings/notices; continue and try providers.
+    return true;
 });
 
 set_exception_handler(function ($e) {
@@ -403,6 +404,9 @@ $responsePayload = ["text" => $text];
 // Surface the fallback source so callers can show a notice if needed.
 if (isset($result['_source'])) {
     $responsePayload['_source'] = $result['_source'];
+}
+if (!empty($phpWarnings)) {
+    $responsePayload['_warnings'] = $phpWarnings;
 }
 
 send_json(200, $responsePayload);
