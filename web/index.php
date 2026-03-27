@@ -1061,7 +1061,13 @@ $ai_test_used = false;
                     }
                     throw new Error(errorMessage);
                 }
-                const data = await res.json();
+                const raw = await res.text();
+                let data;
+                try {
+                    data = JSON.parse(raw);
+                } catch (_) {
+                    data = { text: raw };
+                }
                 outputEl.textContent = data.text || '(empty response)';
                 statusEl.textContent = 'Done!';
                 if (data._source === 'local-fallback') {

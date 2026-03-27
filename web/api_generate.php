@@ -2,7 +2,37 @@
 
 require_once 'config.php';
 
-header('Content-Type: application/json');
+ini_set('display_errors', '0');
+header('Content-Type: application/json; charset=utf-8');
+
+if (ob_get_level() === 0) {
+    ob_start();
+}
+
+function send_json(int $status, array $payload): void {
+    http_response_code($status);
+    echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if (ob_get_level() > 0) {
+        ob_end_flush();
+    }
+    exit;
+}
+
+set_error_handler(function ($severity, $message, $file, $line) {
+    error_log("api_generate.php warning/error: {$message} in {$file}:{$line}");
+    send_json(500, [
+        'error' => 'Server-side PHP warning/error occurred during AI request.',
+        'details' => $message,
+    ]);
+});
+
+set_exception_handler(function ($e) {
+    error_log('api_generate.php exception: ' . $e->getMessage());
+    send_json(500, [
+        'error' => 'Unhandled server exception during AI request.',
+        'details' => $e->getMessage(),
+    ]);
+});
 
 $token = trim(getenv('HF_TOKEN') ?: getenv('HF_API_TOKEN') ?: '');
 $aiApiUrl = trim(getenv('AI_API_URL') ?: '');
@@ -16,32 +46,33 @@ $fallbackModelsEnv = trim(getenv('HF_FALLBACK_MODELS') ?: 'distilgpt2,EleutherAI
 $tokenValid = $token !== '' && str_starts_with($token, 'hf_');
 
 if (!$tokenValid && $aiApiUrl === '') {
-    http_response_code(500);
     $tokenHint = $token === ''
         ? 'HF_TOKEN is not set'
         : 'HF_TOKEN does not look valid (expected it to start with "hf_")';
-    echo json_encode([
+    send_json(500, [
         'error' => 'Missing or invalid AI configuration',
         'hint'  => "{$tokenHint}. Set HF_TOKEN to a valid Hugging Face token, or set AI_API_URL to a custom inference endpoint.",
     ]);
-    exit;
 }
 
-$data = json_decode(file_get_contents("php://input"), true);
+$rawBody = file_get_contents("php://input");
+$data = json_decode($rawBody, true);
+if (!is_array($data)) {
+    send_json(400, [
+        'error' => 'Invalid JSON request body.',
+        'hint' => 'Expected JSON object: {"prompt":"...","length":120}',
+    ]);
+}
 
 $prompt = trim($data['prompt'] ?? '');
 $length = (int)($data['length'] ?? 120);
 
 if ($prompt === '') {
-    http_response_code(400);
-    echo json_encode(['error' => 'Prompt is required']);
-    exit;
+    send_json(400, ['error' => 'Prompt is required']);
 }
 
 if ($length < 1 || $length > 1000) {
-    http_response_code(400);
-    echo json_encode(['error' => 'Length must be between 1 and 1000']);
-    exit;
+    send_json(400, ['error' => 'Length must be between 1 and 1000']);
 }
 
 $payload = json_encode([
@@ -355,21 +386,17 @@ if ($result === null && $allowLocalFallback) {
 }
 
 if ($result === null) {
-    http_response_code($lastHttpCode >= 400 ? $lastHttpCode : 503);
-    echo json_encode([
+    send_json($lastHttpCode >= 400 ? $lastHttpCode : 503, [
         'error'    => 'No active Shakespeare model provider returned output',
         'attempts' => $attemptErrors,
         'hint'     => 'Set AI_API_URL to your Railway API service (/generate) and MODEL_CHECKPOINT_URL to your trained checkpoint URL. Optional generic fallback requires ALLOW_LOCAL_FALLBACK=1.',
     ]);
-    exit;
 }
 
 $text = maybeExtractText($result);
 
 if (trim($text) === '') {
-    http_response_code(502);
-    echo json_encode(['error' => 'Model returned empty text', 'details' => $result]);
-    exit;
+    send_json(502, ['error' => 'Model returned empty text', 'details' => $result]);
 }
 
 $responsePayload = ["text" => $text];
@@ -378,4 +405,4 @@ if (isset($result['_source'])) {
     $responsePayload['_source'] = $result['_source'];
 }
 
-echo json_encode($responsePayload);
+send_json(200, $responsePayload);

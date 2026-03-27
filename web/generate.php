@@ -401,7 +401,13 @@ $aiApiUrl = 'api_generate.php';
                         throw new Error(errorMessage);
                     }
 
-                    const data = await res.json();
+                    const raw = await res.text();
+                    let data;
+                    try {
+                        data = JSON.parse(raw);
+                    } catch (_) {
+                        data = { text: raw };
+                    }
                     const generated = data.text || data.generated_text || '(empty response)';
                     outputEl.textContent = generated;
                     statusEl.textContent = 'Done!';
