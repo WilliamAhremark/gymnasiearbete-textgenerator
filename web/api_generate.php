@@ -103,6 +103,7 @@ function maybeExtractText($parsed): string {
 $result = null;
 $lastHttpCode = 502;
 $attemptErrors = [];
+$authBlocked = false;
 
 if ($tokenValid) {
     foreach ($models as $modelName) {
@@ -183,15 +184,10 @@ if ($tokenValid) {
                 }
                 $attemptErrors[] = $logEntry;
 
-                // Hard-stop on auth/permission errors — no point trying other models.
+                // Token auth failures should stop HF attempts, but still allow downstream fallbacks.
                 if (in_array($httpCode, [401, 403], true)) {
-                    http_response_code($httpCode);
-                    echo json_encode([
-                        'error'   => $errorText,
-                        'hint'    => $hint,
-                        'details' => $parsed,
-                    ]);
-                    exit;
+                    $authBlocked = true;
+                    break 3;
                 }
 
                 // 404 means this model is unavailable on the router; skip to next model.
@@ -236,6 +232,10 @@ if ($result === null && $aiApiUrl !== '') {
             $attemptErrors[] = "AI_API_URL {$aiApiUrl}: {$apiError}";
         }
     }
+}
+
+if ($result === null && $authBlocked) {
+    $attemptErrors[] = 'HF token auth failed; remote HF generation was skipped after authentication rejection.';
 }
 
 // Tertiary fallback: local pattern-based text generation (ai-fallback.php).

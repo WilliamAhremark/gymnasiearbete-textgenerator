@@ -2,9 +2,13 @@
 require_once 'config.php';
 requireLogin();
 
+<<<<<<< HEAD
 $hfModel = getenv('HF_MODEL') ?: 'Williack/neuraltext-model';
 $aiApiUrl = '/api_generate.php';
 $hfApiToken = getenv('HF_API_TOKEN') ?: '';
+=======
+$aiApiUrl = 'api_generate.php';
+>>>>>>> 067f876 (Fix generate payload flow and improve auth-failure fallback handling)
 ?>
 <!DOCTYPE html>
 <html lang="sv">
@@ -325,7 +329,6 @@ $hfApiToken = getenv('HF_API_TOKEN') ?: '';
 
         <script>
             const apiUrl = <?php echo json_encode($aiApiUrl, JSON_UNESCAPED_SLASHES); ?>;
-            const hfApiToken = <?php echo json_encode($hfApiToken); ?>;
             const promptEl = document.getElementById('ai-prompt');
             const lengthEl = document.getElementById('ai-length');
             const outputEl = document.getElementById('ai-output');
@@ -371,30 +374,40 @@ $hfApiToken = getenv('HF_API_TOKEN') ?: '';
                 btn.disabled = true;
                 outputEl.textContent = '';
                 try {
-                    if (!hfApiToken) {
-                        throw new Error('HF_API_TOKEN is not set. Add your Hugging Face API token as an environment variable in Railway.');
-                    }
                     const res = await fetch(apiUrl, {
                         method: 'POST',
                         headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': 'Bearer ' + hfApiToken
+                            'Content-Type': 'application/json'
                         },
-                        body: JSON.stringify({ inputs: prompt, parameters: { max_new_tokens: length } })
+                        body: JSON.stringify({ prompt, length })
                     });
-                    if (res.status === 401) {
-                        throw new Error('Invalid or expired HF_API_TOKEN. Check your Hugging Face API token in Railway environment variables.');
-                    }
-                    if (res.status === 503) {
-                        throw new Error('Model is loading on Hugging Face servers. Please wait a moment and try again.');
-                    }
+
                     if (!res.ok) {
-                        throw new Error(`Hugging Face API error (HTTP ${res.status})`);
+                        let errorMessage = `API error ${res.status}`;
+                        try {
+                            const errData = await res.json();
+                            if (errData?.error) {
+                                errorMessage = errData.error;
+                            }
+                            if (errData?.hint) {
+                                errorMessage += `\n${errData.hint}`;
+                            }
+                            if (Array.isArray(errData?.attempts) && errData.attempts.length > 0) {
+                                outputEl.textContent = `Diagnostics:\n- ${errData.attempts.slice(0, 5).join('\n- ')}`;
+                            }
+                        } catch (_) {
+                            // Keep status-only message if backend did not return JSON.
+                        }
+                        throw new Error(errorMessage);
                     }
+
                     const data = await res.json();
-                    const generated = Array.isArray(data) ? data[0]?.generated_text : data?.generated_text;
-                    outputEl.textContent = generated || '(empty response)';
+                    const generated = data.text || data.generated_text || '(empty response)';
+                    outputEl.textContent = generated;
                     statusEl.textContent = 'Done!';
+                    if (data._source === 'local-fallback') {
+                        statusEl.textContent = 'Done (fallback mode)';
+                    }
                     statusEl.style.color = '#10b981';
                 } catch (err) {
                     statusEl.textContent = 'Error';
