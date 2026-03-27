@@ -99,6 +99,10 @@ function maybeExtractText($parsed): string {
         return (string)$parsed['text'];
     }
 
+    if (isset($parsed['choices'][0]['message']['content'])) {
+        return (string)$parsed['choices'][0]['message']['content'];
+    }
+
     return '';
 }
 
@@ -151,13 +155,13 @@ if ($preferAiApi) {
 
 if ($tokenValid) {
     foreach ($models as $modelName) {
-        $encodedModel = rawurlencode($modelName);
-        // Try the HuggingFace Inference API (router endpoint).
-        $endpoints = [
-            "https://router.huggingface.co/hf-inference/models/{$encodedModel}"
+        // Try both direct task endpoint and OpenAI-compatible router endpoint.
+        $taskEndpoints = [
+            "https://router.huggingface.co/hf-inference/models/{$modelName}",
+            "https://router.huggingface.co/hf-inference/models/" . rawurlencode($modelName),
         ];
 
-        foreach ($endpoints as $url) {
+        foreach ($taskEndpoints as $url) {
             // Up to 3 attempts per endpoint: handles model-loading (503) and transient errors.
             for ($retry = 0; $retry < 3; $retry++) {
                 [$httpCode, $response, $curlError] = requestJson(
@@ -248,11 +252,78 @@ if ($tokenValid) {
                 break;
             }
         }
+
+        // OpenAI-compatible fallback route on HF router.
+        if ($result === null && !$authBlocked) {
+            $chatPayload = json_encode([
+                'model' => $modelName,
+                'messages' => [
+                    ['role' => 'user', 'content' => $prompt]
+                ],
+                'max_tokens' => $length,
+                'stream' => false
+            ]);
+
+            for ($retry = 0; $retry < 2; $retry++) {
+                [$httpCode, $response, $curlError] = requestJson(
+                    'https://router.huggingface.co/v1/chat/completions',
+                    $chatPayload,
+                    [
+                        "Authorization: Bearer {$token}",
+                        "Content-Type: application/json",
+                        "Accept: application/json"
+                    ]
+                );
+                $lastHttpCode = $httpCode > 0 ? $httpCode : 502;
+
+                if ($curlError !== '') {
+                    $attemptErrors[] = "{$modelName} @ router chat: curl error — {$curlError}";
+                    break;
+                }
+
+                $parsed = json_decode((string)$response, true);
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    $snippet = trim((string)$response);
+                    if (strlen($snippet) > 220) {
+                        $snippet = substr($snippet, 0, 220) . '...';
+                    }
+                    $attemptErrors[] = "{$modelName} @ router chat: non-JSON response (HTTP {$httpCode}) — {$snippet}";
+                    break;
+                }
+
+                if ($httpCode >= 200 && $httpCode < 300) {
+                    $result = $parsed;
+                    break;
+                }
+
+                $errorText = $parsed['error'] ?? ('HTTP ' . $httpCode);
+                $attemptErrors[] = "{$modelName} @ router chat: HTTP {$httpCode} — {$errorText}";
+
+                if (in_array($httpCode, [401, 403], true)) {
+                    $authBlocked = true;
+                    break;
+                }
+
+                if ($retry < 1 && in_array($httpCode, [408, 409, 425, 429, 500, 502, 503, 504], true)) {
+                    usleep(500000);
+                    continue;
+                }
+
+                break;
+            }
+        }
+
+        if ($result !== null || $authBlocked) {
+            break;
+        }
     }
 }
 
 // Secondary/tertiary fallback: custom deployed inference service.
 if ($result === null) {
+    if ($aiApiUrl !== '' && str_contains($aiApiUrl, 'huggingface.co')) {
+        $attemptErrors[] = 'AI_API_URL points to huggingface.co. This must point to your Railway API service URL ending with /generate.';
+    }
     $callCustomAiApi();
 }
 
