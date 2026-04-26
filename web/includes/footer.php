@@ -29,6 +29,7 @@
                         <?php if (isLoggedIn()): ?>
                             <li><a href="profile.php">Profile</a></li>
                             <li><a href="history.php">Your History</a></li>
+                            <?php if (isAdmin()): ?><li><a href="admin.php">Admin Panel</a></li><?php endif; ?>
                             <li><a href="logout.php">Sign Out</a></li>
                             <li><a href="#">Settings</a></li>
                         <?php else: ?>
@@ -45,67 +46,6 @@
     </footer>
 
     <script>
-        // Scroll animation handler
-        const groupedSelectors = [
-            'main > .section:first-child',
-            'main > .section:nth-child(2)',
-            'main > .section:nth-child(3)',
-            '.section-header',
-            '.cta-shell',
-        ];
-
-        const itemSelectors = [
-            '.cards-grid .feature-card',
-            '.tech-grid .tech-item',
-            '.footer-grid .footer-col',
-            '.form-group',
-            'table tbody tr',
-            '.history-item',
-            '.profile-section'
-        ];
-
-        groupedSelectors.forEach(selector => {
-            document.querySelectorAll(selector).forEach(el => {
-                el.classList.add('scroll-animate');
-            });
-        });
-
-        itemSelectors.forEach(selector => {
-            document.querySelectorAll(selector).forEach(el => {
-                el.classList.add('scroll-animate', 'scroll-animate-item');
-            });
-        });
-
-        // Auto-stagger för små element
-        document.querySelectorAll('.cards-grid, .tech-grid, .footer-grid, .form-group, table tbody').forEach(group => {
-            const items = group.querySelectorAll('.scroll-animate-item, .scroll-animate');
-            items.forEach((item, index) => {
-                item.style.transitionDelay = `${Math.min(index * 0.08, 0.48)}s`;
-            });
-        });
-
-        // Intersection observer för scroll animations
-        const observer = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    entry.target.classList.add('show');
-                } else {
-                    const rect = entry.target.getBoundingClientRect();
-                    const completelyOut = rect.bottom < 0 || rect.top > window.innerHeight;
-
-                    if (completelyOut) {
-                        entry.target.classList.remove('show');
-                    }
-                }
-            });
-        }, {
-            threshold: 0.2
-        });
-
-        document.querySelectorAll('.scroll-animate').forEach(el => {
-            observer.observe(el);
-        });
-
         // Smooth scroll för anchor links
         document.querySelectorAll('a[href^="#"]').forEach(anchor => {
             anchor.addEventListener('click', function (e) {
@@ -117,5 +57,6 @@
             });
         });
     </script>
+    <script src="<?= BASE_URL ?>assets/js/main.js"></script>
 </body>
 </html>

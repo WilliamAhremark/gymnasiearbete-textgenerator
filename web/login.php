@@ -6,9 +6,15 @@ if (isLoggedIn()) {
     exit;
 }
 
+generateCSRFToken();
+
 $errors = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        $errors[] = 'Ogiltig session. Ladda om sidan och försök igen.';
+    }
+
     $email = sanitizeInput($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
 
@@ -23,24 +29,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $user = $stmt->fetch();
 
             if ($user && password_verify($password, $user['password'])) {
-                $_SESSION['user_id'] = $user['id'];
-                $_SESSION['username'] = $user['username'];
-                $_SESSION['user_role'] = $user['role'];
-                $_SESSION['email'] = $user['email'];
+                if (empty($user['is_verified'])) {
+                    $errors[] = 'Kontot är inte verifierat ännu. Kontrollera din e-post och klicka på verifieringslänken.';
+                } else {
+                    session_regenerate_id(true);
+                    $_SESSION['user_id'] = $user['id'];
+                    $_SESSION['username'] = $user['username'];
+                    $_SESSION['user_role'] = $user['role'];
+                    $_SESSION['email'] = $user['email'];
 
-                setcookie('ai_demo_tested', '', time() - 3600, '/');
+                    setcookie('ai_demo_tested', '', time() - 3600, '/');
 
-                $stmt = $pdo->prepare("UPDATE users SET last_login = NOW() WHERE id = ?");
-                $stmt->execute([$user['id']]);
+                    $stmt = $pdo->prepare("UPDATE users SET last_login = NOW() WHERE id = ?");
+                    $stmt->execute([$user['id']]);
 
-                $redirect = 'dashboard.php';
-                if (isset($_SESSION['redirect_url'])) {
-                    $redirect = $_SESSION['redirect_url'];
-                    unset($_SESSION['redirect_url']);
+                    generateCSRFToken();
+
+                    $redirect = 'dashboard.php';
+                    if (isset($_SESSION['redirect_url'])) {
+                        $redirect = $_SESSION['redirect_url'];
+                        unset($_SESSION['redirect_url']);
+                    }
+
+                    header("Location: " . $redirect);
+                    exit;
                 }
-
-                header("Location: " . $redirect);
-                exit;
             } else {
                 $errors[] = "Felaktig e-post eller lösenord.";
             }
@@ -56,7 +69,7 @@ include 'includes/header.php';
 ?>
 
 <main>
-    <section class="section" style="min-height: 70vh; display: flex; align-items: center;">
+    <section class="section page-hero">
         <div class="container">
             <div style="max-width: 480px; margin: 0 auto;" class="scroll-animate">
                 <div style="text-align: center; margin-bottom: 3rem;">
@@ -74,7 +87,7 @@ include 'includes/header.php';
                 <?php endif; ?>
 
                 <form method="POST" action="" class="scroll-animate">
-                    <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(generateCSRFToken()) ?>">
 
                     <div class="form-group scroll-animate-item">
                         <label for="email">Email Address</label>
@@ -98,6 +111,7 @@ include 'includes/header.php';
 
                 <div style="text-align: center; margin-top: 2rem; color: var(--text-secondary);">
                     <p>Don't have an account? <a href="register.php" style="color: var(--accent); text-decoration: none; font-weight: 600;">Create one</a></p>
+                    <p style="margin-top: 0.5rem;">Didn't get the verification email? <a href="resend_verification.php" style="color: var(--accent); text-decoration: none; font-weight: 600;">Send it again</a></p>
                     <div style="margin-top: 1rem;">
                         <a href="index.php" style="color: var(--text-secondary); text-decoration: none; font-size: 0.9rem;"><i class="fas fa-arrow-left"></i> Back to Home</a>
                     </div>

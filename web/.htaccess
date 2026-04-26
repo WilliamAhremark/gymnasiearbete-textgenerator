@@ -1,0 +1,17 @@
+# Enforce HTTPS and basic hardening for Apache in XAMPP.
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Redirect all plaintext HTTP requests to HTTPS.
+    RewriteCond %{HTTPS} !=on
+    RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+</IfModule>
+
+# Block direct browsing of sensitive file patterns.
+<FilesMatch "^(config\.php|composer\.(json|lock)|\.env|\.git)">
+    Require all denied
+</FilesMatch>
+
+# Disable directory listing if an index file is missing.
+Options -Indexes

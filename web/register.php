@@ -5,6 +5,7 @@ generateCSRFToken();
 
 $errors = [];
 $success = '';
+$allowTestReRegistration = envValue('ALLOW_TEST_REREGISTRATION', '0') === '1';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
@@ -41,6 +42,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     if (empty($errors)) {
         try {
+            $pdo->beginTransaction();
+
+            if ($allowTestReRegistration) {
+                // Test mode: allow recreating the same user by deleting old non-admin account.
+                $stmt = $pdo->prepare("DELETE FROM users WHERE (email = ? OR username = ?) AND role = 'user'");
+                $stmt->execute([$email, $username]);
+            }
+
             $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ? OR username = ?");
             $stmt->execute([$email, $username]);
             if ($stmt->rowCount() > 0) {
@@ -49,23 +58,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $passwordHash = password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]);
                 try {
                     // Prefer explicit role for DB variants without a default value.
-                    $stmt = $pdo->prepare("INSERT INTO users (email, username, password, role) VALUES (?, ?, ?, 'user')");
+                    $stmt = $pdo->prepare("INSERT INTO users (email, username, password, role, is_verified) VALUES (?, ?, ?, 'user', 0)");
                     $stmt->execute([$email, $username, $passwordHash]);
                 } catch (PDOException $insertError) {
                     // Fallback for older schema variants where role column does not exist.
                     if (($insertError->errorInfo[1] ?? 0) === 1054) {
-                        $stmt = $pdo->prepare("INSERT INTO users (email, username, password) VALUES (?, ?, ?)");
+                        $stmt = $pdo->prepare("INSERT INTO users (email, username, password, is_verified) VALUES (?, ?, ?, 0)");
                         $stmt->execute([$email, $username, $passwordHash]);
                     } else {
                         throw $insertError;
                     }
                 }
-                
-                $success = "Kontot har skapats! Du kan nu logga in.";
-                $_POST = [];
+
+                $userId = (int)$pdo->lastInsertId();
+                $verificationToken = createVerificationToken($userId);
+
+                $stmt = $pdo->prepare("INSERT INTO email_verification_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)");
+                $stmt->execute([$userId, $verificationToken['hash'], $verificationToken['expires_at']]);
+
+                $pdo->commit();
+
+                [$mailOk, $mailMessage] = sendVerificationEmail($email, $username, $verificationToken['raw'], $userId);
+                if ($mailOk) {
+                    $success = "Kontot har skapats! Kontrollera din e-post och verifiera kontot innan du loggar in.";
+                    $_POST = [];
+                } else {
+                    $cleanup = $pdo->prepare("DELETE FROM email_verification_tokens WHERE user_id = ?");
+                    $cleanup->execute([$userId]);
+                    $cleanup = $pdo->prepare("DELETE FROM users WHERE id = ?");
+                    $cleanup->execute([$userId]);
+                    $errors[] = $mailMessage;
+                }
             }
         } catch (PDOException $e) {
             error_log("Registration error: " . $e->getMessage());
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
             if (($e->errorInfo[0] ?? '') === '23000') {
                 $errors[] = "E-post eller användarnamn finns redan.";
             } elseif (($e->errorInfo[0] ?? '') === '42S02') {
@@ -83,7 +112,7 @@ $pageTitle = 'Create Account - NeuralText AI';
 include 'includes/header.php';
 ?>
 <main>
-    <section class="section" style="min-height: 95vh; display: flex; align-items: center;">
+    <section class="section page-hero">
         <div class="container">
             <div style="max-width: 520px; margin: 0 auto;" class="scroll-animate">
                 <div style="text-align: center; margin-bottom: 3rem;">
@@ -108,7 +137,7 @@ include 'includes/header.php';
                 <?php endif; ?>
 
                 <form method="POST" action="" class="scroll-animate">
-                    <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
 
                     <div class="form-group scroll-animate-item">
                         <label for="email">Email Address</label>
