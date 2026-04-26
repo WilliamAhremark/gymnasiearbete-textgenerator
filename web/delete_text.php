@@ -1,101 +1,60 @@
 <?php
-/**
- * DELETE HISTORIKPOST - FULLSTÄNDIG CRUD (DEL AV A-NIVÅ KRAV)
- * 
- * ÄNDAMÅL: Tillåter användare att radera sina genererade AI-texter
- * 
- * SÄKERHETSKONTROLLER:
- * 1. requireLogin() - Bara inloggade användare kan radera
- * 2. CSRF-token validering - Förhindrar CSRF-attacker
- * 3. Ownership check - Du kan BARA radera DIN egna texter
- *    SQL: DELETE FROM ai_texts WHERE id = ? AND user_id = ?
- *    Användar-ID från $_SESSION kan inte manipuleras från client-side
- * 4. Prepared statements - Förhindrar SQL-injektion från text_id
- * 
- * IMPLEMENTERAR: DELETE från CRUD-operationen
- */
-
 require_once 'config.php';
 requireLogin();
 
-// Tillåt bara POST-requests
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    http_response_code(405);
-    header('Content-Type: application/json');
-    echo json_encode(['error' => 'Method Not Allowed']);
-    exit;
+$textId = isset($_GET['id']) ? (int)$_GET['id'] : (int)($_POST['text_id'] ?? 0);
+
+$stmt = $pdo->prepare('SELECT * FROM ai_texts WHERE id = ? AND user_id = ?');
+$stmt->execute([$textId, $_SESSION['user_id']]);
+$text = $stmt->fetch();
+
+if (!$text) {
+    http_response_code(404);
+    die('Texten hittades inte eller du har inte behörighet att radera den.');
 }
 
-// Hämta text_id från POST-data
-$text_id = isset($_POST['text_id']) ? intval($_POST['text_id']) : null;
-$csrf_token = isset($_POST['csrf_token']) ? $_POST['csrf_token'] : '';
-
-// VALIDERING: Kontrollera CSRF-token
-if (!verifyCSRFToken($csrf_token)) {
-    http_response_code(403);
-    header('Content-Type: application/json');
-    echo json_encode(['error' => 'CSRF-token ogiltig. Försök igen.']);
-    exit;
-}
-
-// VALIDERING: text_id måste vara satt och vara ett nummer
-if (!$text_id || $text_id <= 0) {
-    http_response_code(400);
-    header('Content-Type: application/json');
-    echo json_encode(['error' => 'Ogiltigt text-ID']);
-    exit;
-}
-
-// SÄKERHET: Radera ENDAST användarens egna text
-// WHERE-clause kräver att BÅDA id och user_id matchar
-/**
- * VARFÖR DETTA ÄR VIKTIGT:
- * 
- * OSÄKER DELETE:
- * DELETE FROM ai_texts WHERE id = ?
- * User 1 kan radera User 2:s texter genom att skicka User 2:s ID!
- * 
- * SÄKER DELETE:
- * DELETE FROM ai_texts WHERE id = ? AND user_id = ?
- * user_id hämtas från $_SESSION['user_id'] (kan inte manipuleras från browser)
- * Så User 1 kan ALDRIG radera någon annans texter
- */
-try {
-    $user_id = $_SESSION['user_id'];
-    
-    $stmt = $pdo->prepare(
-        "DELETE FROM ai_texts 
-         WHERE id = ? AND user_id = ?"
-    );
-    
-    // execute() kör prepared statement säkert
-    $stmt->execute([$text_id, $user_id]);
-    
-    // Kontrollera om något raderades (rowCount() = antal påverkade rader)
-    if ($stmt->rowCount() === 0) {
-        // Antingen existerar ID:t inte, eller så tillhör det inte denna användare
-        http_response_code(404);
-        header('Content-Type: application/json');
-        echo json_encode(['error' => 'Text hittades inte eller du har inte behörighet att radera den']);
-        exit;
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        http_response_code(403);
+        die('Ogiltig session. Försök igen.');
     }
-    
-    // Framgång: Text raderad
-    http_response_code(200);
-    header('Content-Type: application/json');
-    echo json_encode(['success' => 'Text raderad framgångsrikt']);
-    
-} catch (PDOException $e) {
-    /**
-     * SÄKERHET: Visa INTE detaljerade fel-meddelanden till client
-     * En angripare kan använda detta för att lära sig om din databas-struktur
-     * 
-     * Vi loggar det sanna felet internt, men säger bara "something went wrong"
-     */
-    http_response_code(500);
-    error_log("Delete text error: " . $e->getMessage());
-    header('Content-Type: application/json');
-    echo json_encode(['error' => 'Ett fel uppstod vid radering']);
+
+    $deleteStmt = $pdo->prepare('DELETE FROM ai_texts WHERE id = ? AND user_id = ?');
+    $deleteStmt->execute([$textId, $_SESSION['user_id']]);
+
+    header('Location: history.php');
     exit;
 }
+
+$pageTitle = 'Delete text - NeuralText AI';
+include 'includes/header.php';
 ?>
+
+<main>
+    <section class="section page-hero">
+        <div class="container" style="max-width: 720px; margin: 0 auto;">
+            <div class="section-header scroll-animate">
+                <div class="section-label">Delete</div>
+                <h1 class="section-title">Delete saved text</h1>
+                <p class="section-description">This action cannot be undone.</p>
+            </div>
+
+            <div style="background: rgba(220, 53, 69, 0.08); border: 1px solid rgba(220, 53, 69, 0.25); border-radius: 16px; padding: 1.2rem; margin-bottom: 1.2rem;">
+                <p style="color: #ff8a8a; margin-bottom: 0.6rem;"><strong>Prompt:</strong></p>
+                <p style="white-space: pre-wrap; color: #dbe6ff;"><?= htmlspecialchars($text['input_text']) ?></p>
+            </div>
+
+            <form method="POST" class="scroll-animate" onsubmit="return confirm('Do you really want to delete this text?');">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(generateCSRFToken()) ?>">
+                <input type="hidden" name="text_id" value="<?= (int)$text['id'] ?>">
+
+                <div style="display:flex; gap: 0.75rem; flex-wrap: wrap;">
+                    <button type="submit" class="btn history-btn history-btn-danger"><i class="fas fa-trash"></i> Delete permanently</button>
+                    <a href="history.php" class="btn"><i class="fas fa-arrow-left"></i> Cancel</a>
+                </div>
+            </form>
+        </div>
+    </section>
+</main>
+
+<?php include 'includes/footer.php'; ?>
