@@ -1,0 +1,32 @@
+STARTPROJECT.TXT - SNABBSTART (ETT KOMMANDO)
+
+=== MASTER START KOMMANDO (KOR DETTA) ===
+
+$env:AI_API_URL='http://127.0.0.1:8000/generate'; $env:PREFER_AI_API_URL='1'; $env:CORS_ORIGINS='https://gymnasiearbete.local,http://localhost'; Start-Process -NoNewWindow "C:\xampp\apache\bin\httpd.exe" -ArgumentList '-f','C:\xampp\apache\conf\httpd.conf'; Start-Sleep -Milliseconds 500; & 'C:\Users\William\mambaforge\python.exe' -m uvicorn api.app:app --host 127.0.0.1 --port 8000
+
+=== SEDAN: ÖPPNA I BROWSER ===
+
+https://gymnasiearbete.local/
+
+=== FIRST-TIME SETUP (EN GANG) ===
+
+1) Lägg till i C:\Windows\System32\drivers\etc\hosts  (som Administrator):
+127.0.0.1 gymnasiearbete.local
+
+2) Starta XAMPP (Apache + MySQL) via Control Panel först, ELLER kör detta innan master-kommandot:
+
+=== OPTIONAL: SNABBKOLL ===
+
+Ctrl+C för att stoppa. Testa sedan:
+curl.exe -k -I https://gymnasiearbete.local/
+curl.exe http://127.0.0.1:8000/
+
+=== LOGIN (TESTKONTON) ===
+
+Admin
+Email: admin@ai-project.com
+Losenord: password
+
+Guest
+Email: guest@ai-project.com
+Losenord: password

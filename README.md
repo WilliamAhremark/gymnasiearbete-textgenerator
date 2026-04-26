@@ -12,10 +12,17 @@ Detta projekt är en webbapplikation byggd för gymnasiearbete. Den innehåller:
 
 - startsida med modern UI
 - registrering och inloggning
+- e-postverifiering via SMTP
 - dashboard/profil/historik
 - **CRUD-operationer för historik**: Läs, skapa, uppdatera, radera genererade texter
+- administratörspanel för roller och verifiering
 - AI-demo på startsidan
 - tekniksektion och informationssidor
+
+## Planering och sitekarta
+
+- [PLANERING.md](PLANERING.md)
+- [SITEKARTA.md](SITEKARTA.md)
 
 ## Teknikstack
 
@@ -71,6 +78,10 @@ GYMNASIEARBETE1/
 ```
 
 ## Kom igång (XAMPP)
+
+For HTTPS/SSL-implementation (A-niva), folj:
+
+- [HTTPS_XAMPP_IMPLEMENTATION_GUIDE.md](HTTPS_XAMPP_IMPLEMENTATION_GUIDE.md)
 
 ### 1) Starta tjänster
 
